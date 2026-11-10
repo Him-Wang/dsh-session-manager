@@ -1,0 +1,11 @@
+# dsh-session-manager bundle patch: one row carrying both halves.
+# The browser half is discovered through package.json dsh.client; the host half
+# registers the maintenance routes under /dsh-session-manager/*.
+- insert:
+    - id: dsh-session-manager
+      name: 'dsh-session-manager'
+      config:
+        enabled: true
+        # home: C:/Users/you/.dsh
+        # trashDir: C:/Users/you/.dsh/trash
+        busyWindowMs: 30000
