@@ -1,8 +1,8 @@
 {
   "name": "dsh-session-manager",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "会话与工作区清理：永久删除会话日志、移出工作区、把工作区文件夹移入 DSH 回收站",
+  "description": "会话与工作区清理：会话删除先进回收站（可恢复），工作区可移出或把文件夹移入回收站",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

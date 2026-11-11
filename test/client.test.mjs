@@ -95,11 +95,11 @@ const menuElement = menu.render({
   useMenuOpenState: () => [false, () => {}],
 });
 assert.ok(menuElement && menuElement.props !== undefined, 'menu item builds an element');
-assert.match(JSON.stringify(menuElement), /彻底删除会话/);
+assert.match(JSON.stringify(menuElement), /移到回收站/);
 
 const buttonElement = rowAction.render({ sessionId: 'session-1', displayTitle: '示例会话' });
 assert.ok(buttonElement, 'hover button builds an element');
-assert.match(JSON.stringify(buttonElement), /彻底删除会话/);
+assert.match(JSON.stringify(buttonElement), /移到回收站/);
 
 const panelWrapper = panel.render({});
 assert.ok(panelWrapper, 'settings panel wrapper builds an element');

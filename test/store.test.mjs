@@ -10,7 +10,8 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   decodeSegment, encodeSegment, forgetSessions, listSessions, listTrash, paths,
-  projectKey, purgeTrashEntry, readWorkspaces, removeSession, trashFolder,
+  projectKey, purgeTrashEntry, readWorkspaces, rememberSession, removeSession,
+  restoreTrashEntry, trashFolder, trashSession,
 } from '../lib/store.js';
 
 const scratch = await fsp.mkdtemp(path.join(import.meta.dirname, '.tmp-'));
@@ -152,6 +153,34 @@ await assert.rejects(() => purgeTrashEntry(p, 'nope'), /没有这个条目/, 're
 assert.equal(await purgeTrashEntry(p, path.basename(moved)), true);
 assert.equal(fs.existsSync(moved), false, 'purge really deletes');
 assert.equal((await listTrash(p)).length, 0);
+
+/* ---------------------------------------------- trash a session, then restore */
+
+const parked = await trashSession(p, { ...other, updatedAt: 0 }, { busyWindowMs: 30_000 });
+assert.match(parked.name, /-session-/, 'trash entry names its kind');
+assert.equal(fs.existsSync(other.dir), false, 'log left the sessions tree');
+assert.equal(fs.existsSync(path.join(p.trash, parked.name, 'session', 'session.v4.jsonl.zstd')), true, 'payload kept intact');
+assert.equal(fs.existsSync(path.join(p.projection, `${encodeSegment(second)}.json`)), false, 'cache travels with the log');
+const parkedEntry = (await listTrash(p)).find(entry => entry.kind === 'session');
+assert.equal(parkedEntry.id, second);
+assert.equal(parkedEntry.title, 'Second session');
+
+const back = await restoreTrashEntry(p, parked.name);
+assert.equal(back.archived, true, 'archive flag survives the round trip');
+assert.equal(fs.existsSync(path.join(other.dir, 'session.v4.jsonl.zstd')), true, 'log is back in its project directory');
+assert.equal(fs.existsSync(path.join(p.projection, `${encodeSegment(second)}.json`)), true, 'cache row is back');
+assert.equal(fs.existsSync(path.join(p.trash, parked.name)), false, 'consumed entry is gone');
+assert.equal(rememberSession(p, back), true);
+assert.equal(readWorkspaces(p.workspaceFile).archived.has(second), true, 'archive membership restored');
+
+await assert.rejects(() => restoreTrashEntry(p, parked.name), /没有这个条目/, 'a consumed entry cannot be restored twice');
+
+const parkedAgain = await trashSession(p, { ...other, updatedAt: 0 }, { busyWindowMs: 30_000 });
+fs.mkdirSync(other.dir, { recursive: true });
+await assert.rejects(() => restoreTrashEntry(p, parkedAgain.name), /已经有同名会话/, 'never overwrites a live session');
+await fsp.rm(other.dir, { recursive: true, force: true });
+await purgeTrashEntry(p, parkedAgain.name);
+assert.equal(fs.existsSync(path.join(p.trash, parkedAgain.name)), false, 'a parked session can be purged for good');
 
 await fsp.rm(root, { recursive: true, force: true });
 console.log('store.js: all checks passed');

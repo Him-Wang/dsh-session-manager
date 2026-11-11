@@ -9,3 +9,5 @@
         # home: C:/Users/you/.dsh
         # trashDir: C:/Users/you/.dsh/trash
         busyWindowMs: 30000
+        # 会话删除默认移入回收站（可恢复）；设为 false 则直接永久删除。
+        trashSessions: true

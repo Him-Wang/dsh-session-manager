@@ -31,7 +31,7 @@ fs.utimesSync(path.join(p.sessions, project, encodeSegment(sessionId), 'session.
 fs.mkdirSync(p.projection, { recursive: true });
 fs.writeFileSync(path.join(p.projection, `${encodeSegment(sessionId)}.json`),
   JSON.stringify({ record: { identity: { cwd }, rows: { title: { val: '要被删掉的会话' } } } }));
-const folder = path.join(root, 'workspace-folder');
+const folder = cwd;
 fs.mkdirSync(folder, { recursive: true });
 fs.writeFileSync(path.join(folder, 'a.txt'), 'data');
 fs.mkdirSync(path.dirname(p.workspaceFile), { recursive: true });
@@ -74,7 +74,8 @@ assert.deepEqual([...routes.keys()].sort(), [
   '/dsh-session-manager/delete-workspace',
   '/dsh-session-manager/overview',
   '/dsh-session-manager/purge-trash',
-], 'all four routes registered');
+  '/dsh-session-manager/restore-session',
+], 'all five routes registered');
 
 const server = http.createServer((request, response) => {
   const handler = routes.get(request.url.split('?')[0]);
@@ -149,12 +150,59 @@ try {
   assert.equal(deleted.status, 200);
   assert.equal(deleted.json.ok, false, 'partial failure is reported as not-ok');
   assert.deepEqual(deleted.json.removed, [sessionId], 'duplicate ids collapse');
+  assert.equal(deleted.json.mode, 'trash', 'deletion is reversible by default');
   assert.equal(deleted.json.results.filter(r => r.ok).length, 1);
   assert.equal(deleted.json.results.find(r => r.id === 'no-such-id').error, '没有找到这个会话的日志目录');
-  assert.equal(fs.existsSync(path.join(p.sessions, project, encodeSegment(sessionId))), false, 'log removed');
-  assert.equal(fs.existsSync(path.join(p.projection, `${encodeSegment(sessionId)}.json`)), false, 'cache removed');
-  const registry = JSON.parse(fs.readFileSync(p.workspaceFile, 'utf8'));
+  assert.equal(fs.existsSync(path.join(p.sessions, project, encodeSegment(sessionId))), false, 'log left the sessions tree');
+  assert.equal(fs.existsSync(path.join(p.projection, `${encodeSegment(sessionId)}.json`)), false, 'cache moved with the log');
+  const trashName = deleted.json.results.find(r => r.ok).trashName;
+  const trashed = path.join(trashDir, trashName);
+  assert.ok(fs.existsSync(path.join(trashed, 'session', 'session.v4.jsonl.zstd')), 'log payload sits in the trash entry');
+  assert.ok(fs.existsSync(path.join(trashed, 'projection.json')), 'projection cache travels too');
+  const meta = JSON.parse(fs.readFileSync(path.join(trashed, 'meta.json'), 'utf8'));
+  assert.equal(meta.kind, 'session');
+  assert.equal(meta.workspaceId, 'ws-1');
+  let registry = JSON.parse(fs.readFileSync(p.workspaceFile, 'utf8'));
   assert.deepEqual(registry.tables.workspaces['ws-1'].sessionIds, [], 'registry membership pruned');
+
+  const listed = await call('overview');
+  assert.equal(listed.json.trash.length, 1);
+  assert.equal(listed.json.trash[0].kind, 'session');
+  assert.equal(listed.json.trash[0].title, '要被删掉的会话');
+  assert.equal(listed.json.trash[0].id, sessionId);
+
+  /* ------------------------------------------------------------- restore it */
+
+  const restored = await call('restore-session', {
+    method: 'POST',
+    body: { name: trashName },
+    headers: { 'x-dsh-session-manager': '1' },
+  });
+  assert.equal(restored.status, 200);
+  assert.equal(restored.json.ok, true);
+  assert.equal(restored.json.registryUpdated, true);
+  assert.equal(fs.existsSync(path.join(p.sessions, project, encodeSegment(sessionId), 'session.v4.jsonl.zstd')), true, 'log is back');
+  assert.equal(fs.existsSync(path.join(p.projection, `${encodeSegment(sessionId)}.json`)), true, 'cache is back');
+  assert.equal(fs.existsSync(trashed), false, 'trash entry consumed by the restore');
+  registry = JSON.parse(fs.readFileSync(p.workspaceFile, 'utf8'));
+  assert.deepEqual(registry.tables.workspaces['ws-1'].sessionIds, [sessionId], 'workspace membership restored');
+
+  const again = await call('delete-sessions', {
+    method: 'POST',
+    body: { ids: [sessionId] },
+    headers: { 'x-dsh-session-manager': '1' },
+  });
+  assert.equal(again.json.ok, true);
+  const secondName = again.json.results[0].trashName;
+  assert.ok(fs.existsSync(path.join(trashDir, secondName)), 'the second deletion also lands in the trash');
+
+  const folderRestore = await call('restore-session', {
+    method: 'POST',
+    body: { name: 'nope' },
+    headers: { 'x-dsh-session-manager': '1' },
+  });
+  assert.equal(folderRestore.status, 400);
+  assert.match(folderRestore.json.error, /回收站里没有/);
 
   /* ------------------------------------------------------- delete workspace */
 
@@ -203,6 +251,23 @@ try {
   });
   assert.equal(escape.status, 400);
   assert.match(escape.json.error, /无效/);
+
+  const folderEntry = path.basename(blocked.json.trashed);
+  const notSession = await call('restore-session', {
+    method: 'POST',
+    body: { name: folderEntry },
+    headers: { 'x-dsh-session-manager': '1' },
+  });
+  assert.equal(notSession.status, 400);
+  assert.match(notSession.json.error, /不是会话条目/);
+
+  const purgeSession = await call('purge-trash', {
+    method: 'POST',
+    body: { name: secondName },
+    headers: { 'x-dsh-session-manager': '1' },
+  });
+  assert.equal(purgeSession.status, 200);
+  assert.equal(fs.existsSync(path.join(trashDir, secondName)), false, 'a session entry can be purged for good');
 
   console.log('index.js: all checks passed');
 } finally {
