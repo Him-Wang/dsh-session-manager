@@ -13,7 +13,9 @@ import {
   projectKey, purgeTrashEntry, readWorkspaces, removeSession, trashFolder,
 } from '../lib/store.js';
 
-const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'dsh-sm-test-'));
+const scratch = await fsp.mkdtemp(path.join(import.meta.dirname, '.tmp-'));
+const root = path.join(scratch, 'home');
+fs.mkdirSync(root, { recursive: true });
 const home = path.join(root, 'home');
 const cwd = path.join(root, 'project');
 const p = paths(home);

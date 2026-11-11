@@ -14,7 +14,9 @@ import { encodeSegment, paths, projectKey } from '../lib/store.js';
 assert.equal(name, 'dsh-session-manager');
 assert.deepEqual(inject, ['webServer', 'workspaceController']);
 
-const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'dsh-sm-host-'));
+const scratch = await fsp.mkdtemp(path.join(import.meta.dirname, '.tmp-'));
+const root = path.join(scratch, 'home');
+fs.mkdirSync(root, { recursive: true });
 const home = path.join(root, 'home');
 const cwd = path.join(root, 'project');
 const trashDir = path.join(root, 'recycle');
